@@ -2,7 +2,7 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()  # Si vous utilisez aussi un .env en local (facultatif)
 
 # Imports LangChain
 from langchain_community.document_loaders import PyPDFLoader
@@ -20,12 +20,15 @@ def create_chain(docs, existing_memory=None):
     qu'on souhaite conserver (pour ne pas perdre l'historique).
     """
 
+    # Récupérer la clé OpenAI depuis st.secrets (section [default])
+    openai_key = st.secrets["default"]["OPENAI_API_KEY"]
+
     # Étape 1 : découpage en segments
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     splitted_docs = text_splitter.split_documents(docs)
 
     # Étape 2 : création des embeddings et du vector store
-    embeddings = OpenAIEmbeddings()  # nécessite OPENAI_API_KEY
+    embeddings = OpenAIEmbeddings(api_key=openai_key)
     vectorstore = FAISS.from_documents(splitted_docs, embeddings)
 
     # Étape 3 : mémoire conversationnelle
@@ -37,8 +40,8 @@ def create_chain(docs, existing_memory=None):
     else:
         memory = existing_memory
 
-    # Étape 4 : création de la chaîne
-    llm = OpenAI()
+    # Étape 4 : création de la chaîne (LLM)
+    llm = OpenAI(api_key=openai_key)
     chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=vectorstore.as_retriever(),
