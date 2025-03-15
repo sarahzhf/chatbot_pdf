@@ -5,3 +5,5 @@ langchain-openai
 pypdf
 python-dotenv
 python-dotenv
+faiss-cpu
+
