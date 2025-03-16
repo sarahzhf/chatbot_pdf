@@ -166,7 +166,7 @@ def main():
                             send_email_notification(email_input, days_left)
                             st.info("Un e-mail de rappel vous a été envoyé.")
 
-                        st.experimental_rerun()  # recharger la page pour afficher le chatbot
+                        st.rerun() # recharger la page pour afficher le chatbot
                 else:
                     st.error("Identifiants invalides.")
 
