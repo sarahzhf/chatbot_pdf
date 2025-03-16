@@ -6,5 +6,7 @@ pypdf
 python-dotenv
 faiss-cpu
 streamlit>=1.10.0
+streamlit>=1.18.0
+
 
 

@@ -166,7 +166,7 @@ def main():
                             send_email_notification(email_input, days_left)
                             st.info("Un e-mail de rappel vous a été envoyé.")
 
-                        st.rerun() # recharger la page pour afficher le chatbot
+                        st.rerun()  # recharger la page pour afficher le chatbot
                 else:
                     st.error("Identifiants invalides.")
 
@@ -177,7 +177,7 @@ def main():
     st.write(f"Connecté en tant que : **{user_email}**")
     if st.button("Se déconnecter"):
         st.session_state["user_email"] = None
-        st.experimental_rerun()
+        st.rerun()  # relance la page après déconnexion
 
     # Gérer le chatbot
     # Initialiser la session chatbot si pas déjà fait
