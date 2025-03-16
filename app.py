@@ -5,6 +5,7 @@ import datetime
 import smtplib
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
+import random
 
 load_dotenv()  # Charge les variables d'environnement (ex. pour OPENAI_API_KEY)
 
@@ -34,22 +35,14 @@ def days_until_expiration(end_date_str):
     delta = end_date - datetime.date.today()
     return delta.days
 
-def send_email_notification(to_email, days_left):
-    """Envoie un e-mail de notification pour prévenir de la fin prochaine de l'abonnement."""
+def send_email_notification(to_email, subject, body):
+    """Envoie un e-mail (notification abonnement ou code de validation)."""
     # Adaptez ces paramètres à votre fournisseur SMTP
     from_email = "votre_adresse@example.com"
     smtp_server = "smtp.example.com"
     smtp_port = 587
     smtp_user = "votre_adresse@example.com"
     smtp_password = "motdepasseSMTP"
-
-    subject = "Votre abonnement arrive bientôt à expiration"
-    body = (
-        f"Bonjour,\n\n"
-        f"Il vous reste {days_left} jours avant l'expiration de votre abonnement.\n"
-        f"Renouvelez vite !\n\n"
-        f"Cordialement,\nL'équipe"
-    )
 
     msg = MIMEText(body)
     msg["Subject"] = subject
@@ -115,74 +108,126 @@ def create_chain(docs, existing_memory=None):
 # Application Streamlit principale
 ###################################
 def main():
-    st.set_page_config(page_title="Chatbot multi-PDF avec abonnement", layout="wide")
-    st.title("Chatbot multi-PDF + Abonnement par e-mail")
+    st.set_page_config(page_title="Chatbot multi-PDF + Vérification Email", layout="wide")
+    st.title("Chatbot multi-PDF + Validation d'email + Abonnement")
 
-    # Charger la liste des utilisateurs
     users = load_users()
 
-    # Vérifier si l'utilisateur est déjà connecté
     if "user_email" not in st.session_state:
         st.session_state["user_email"] = None
 
-    # Menu principal (Inscription ou Connexion)
+    # Menu principal (S'inscrire, Valider email, Se connecter)
     if st.session_state["user_email"] is None:
-        menu = st.radio("Menu :", ["Inscription", "Connexion"])
-        if menu == "Inscription":
+        menu = st.radio("Menu :", ["S'inscrire", "Valider mon email", "Se connecter"])
+
+        if menu == "S'inscrire":
             st.subheader("Créer un compte")
             email_input = st.text_input("Votre email")
             password_input = st.text_input("Mot de passe", type="password")
-            # On donne 1 an d'abonnement par défaut
-            default_end = (datetime.date.today() + datetime.timedelta(days=365)).strftime("%Y-%m-%d")
 
             if st.button("S'inscrire"):
                 if email_input in users:
                     st.error("Un compte existe déjà avec cet e-mail.")
                 else:
+                    # Générer un code de validation
+                    code = str(random.randint(100000, 999999))
+                    # Stocker l'utilisateur avec verified=False
                     users[email_input] = {
                         "password": password_input,
-                        "subscription_end": default_end
+                        "verified": False,
+                        "verification_code": code,
+                        # On ne définit pas encore la date d'abonnement
+                        "subscription_end": None
                     }
                     save_users(users)
-                    st.success("Inscription réussie ! Vous pouvez maintenant vous connecter.")
 
-        else:  # "Connexion"
+                    # Envoyer un mail avec le code
+                    subject = "Code de validation - Votre inscription"
+                    body = f"Bonjour,\n\nVoici votre code de validation : {code}\n\nMerci de le saisir dans l'onglet 'Valider mon email'.\n"
+                    send_email_notification(email_input, subject, body)
+
+                    st.success("Compte créé ! Un code de validation vous a été envoyé par email.")
+
+        elif menu == "Valider mon email":
+            st.subheader("Valider mon adresse e-mail")
+            email_val = st.text_input("Votre email")
+            code_val = st.text_input("Code de validation (reçu par email)")
+
+            if st.button("Valider"):
+                if email_val in users:
+                    user_data = users[email_val]
+                    if not user_data["verified"]:
+                        if user_data["verification_code"] == code_val:
+                            # Email validé
+                            user_data["verified"] = True
+                            # On donne 1 an d'abonnement à partir d'aujourd'hui
+                            end_date = (datetime.date.today() + datetime.timedelta(days=365)).strftime("%Y-%m-%d")
+                            user_data["subscription_end"] = end_date
+                            save_users(users)
+                            st.success("Email validé ! Vous pouvez maintenant vous connecter.")
+                        else:
+                            st.error("Code de validation incorrect.")
+                    else:
+                        st.info("Votre email est déjà validé. Vous pouvez vous connecter.")
+                else:
+                    st.error("Aucun compte trouvé pour cet email.")
+
+        else:  # "Se connecter"
             st.subheader("Se connecter")
             email_input = st.text_input("Email")
             password_input = st.text_input("Mot de passe", type="password")
 
             if st.button("Se connecter"):
-                if email_input in users and users[email_input]["password"] == password_input:
-                    end_date_str = users[email_input]["subscription_end"]
-                    if not is_subscription_valid(end_date_str):
-                        st.error("Votre abonnement est expiré. Veuillez le renouveler.")
-                    else:
-                        days_left = days_until_expiration(end_date_str)
-                        st.session_state["user_email"] = email_input
-                        st.success(f"Connexion réussie ! Il vous reste {days_left} jours d'abonnement.")
-                        
-                        # Envoi d'un mail si l'abonnement se termine dans < 10 jours
-                        if days_left < 10:
-                            send_email_notification(email_input, days_left)
-                            st.info("Un e-mail de rappel vous a été envoyé.")
+                if email_input in users:
+                    user_data = users[email_input]
+                    if user_data["password"] == password_input:
+                        if not user_data["verified"]:
+                            st.error("Vous devez d'abord valider votre adresse e-mail.")
+                        else:
+                            # Vérifier l'abonnement
+                            if user_data["subscription_end"] is None:
+                                st.error("Votre abonnement n'est pas défini. Contactez l'administrateur.")
+                            else:
+                                end_date_str = user_data["subscription_end"]
+                                if not is_subscription_valid(end_date_str):
+                                    st.error("Votre abonnement est expiré. Veuillez le renouveler.")
+                                else:
+                                    days_left = days_until_expiration(end_date_str)
+                                    st.session_state["user_email"] = email_input
+                                    st.success(f"Connexion réussie ! Il vous reste {days_left} jours d'abonnement.")
 
-                        st.rerun()  # recharger la page pour afficher le chatbot
+                                    # Si l'abonnement se termine dans < 10 jours, envoi d'un mail
+                                    if days_left < 10:
+                                        subject = "Abonnement proche de l'expiration"
+                                        body = (
+                                            f"Bonjour,\n\n"
+                                            f"Il vous reste {days_left} jours avant l'expiration de votre abonnement.\n"
+                                            f"Renouvelez vite !\n\n"
+                                            f"Cordialement,\nL'équipe"
+                                        )
+                                        send_email_notification(email_input, subject, body)
+                                        st.info("Un e-mail de rappel vous a été envoyé.")
+
+                                    st.rerun()
+                    else:
+                        st.error("Mot de passe incorrect.")
                 else:
-                    st.error("Identifiants invalides.")
+                    st.error("Aucun compte trouvé pour cet e-mail.")
 
         return  # On arrête ici si l'utilisateur n'est pas connecté
 
-    # Si l'utilisateur est connecté et a un abonnement valide, on affiche le chatbot
+    # Si l'utilisateur est connecté
     user_email = st.session_state["user_email"]
     st.write(f"Connecté en tant que : **{user_email}**")
     if st.button("Se déconnecter"):
         st.session_state["user_email"] = None
-        st.rerun()  # relance la page après déconnexion
+        st.rerun()
 
-    # Gérer le chatbot
-    # Initialiser la session chatbot si pas déjà fait
+    ###################################
+    # Gérer le chatbot (déjà validé + abonnement OK)
+    ###################################
     if "all_docs" not in st.session_state:
-        st.session_state["all_docs"] = []  # liste de tous les documents PDF
+        st.session_state["all_docs"] = []
     if "chain" not in st.session_state:
         st.session_state["chain"] = None
     if "memory" not in st.session_state:
@@ -191,7 +236,6 @@ def main():
             return_messages=True
         )
 
-    # Barre latérale pour afficher l'historique
     with st.sidebar:
         st.header("Historique de la conversation")
         if st.session_state["chain"] is not None:
@@ -235,6 +279,7 @@ def main():
         result = st.session_state["chain"]({"question": user_question})
         st.markdown("**Réponse :**")
         st.write(result["answer"])
+
 
 if __name__ == "__main__":
     main()
